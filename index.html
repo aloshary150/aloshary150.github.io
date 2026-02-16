@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+<meta charset="UTF-8">
+<title>نظام امتحانات متعدد الخيارات</title>
+<style>
+body { font-family: Arial, sans-serif; background: #f0f4f8; color: #333; padding: 20px; }
+h1 { color: #1d4ed8; text-align:center; }
+h2 { margin-top: 20px; color: #2563eb; }
+button { background: #2563eb; color: #fff; border: none; padding: 8px 12px; cursor: pointer; border-radius: 5px; margin: 5px 0; }
+button:hover { background: #1d4ed8; }
+input[type="text"], input[type="number"], select { padding: 5px; border-radius: 4px; border: 1px solid #ccc; margin: 2px 0; width: 250px; }
+.question { background: #fff; padding: 10px; border-radius: 5px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+#exam-form, #edit-exam, #exam-list { margin-top: 20px; }
+#timer { font-size: 16px; font-weight:bold; color:red; margin-top:10px;}
+.hidden { display:none; }
+</style>
+</head>
+<body>
+
+<h1>نظام امتحانات متعدد الخيارات</h1>
+
+<button id="btnTeacherLogin">لوحة المعلم</button>
+
+<div id="teacher-panel" class="hidden">
+  <h2>لوحة المعلم</h2>
+  <button id="btnCreateExam">إنشاء امتحان جديد</button>
+  <button id="btnShowResults">عرض نتائج جميع الطلاب</button>
+  <button id="btnResetDB">إعادة ضبط قاعدة البيانات</button>
+  <div id="exam-list"></div>
+  <div id="edit-exam"></div>
+</div>
+
+<div id="student-panel">
+  <h2>لوحة الطالب</h2>
+  <label>اختر الامتحان:
+    <select id="select-exam"></select>
+  </label>
+  <br><br>
+  <label>الاسم: <input type="text" id="student-name"></label>
+  <br>
+  <button id="btnStartExam">ابدأ الامتحان</button>
+  <div id="timer"></div>
+  <div id="exam-form"></div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  let exams = JSON.parse(localStorage.getItem('exams') || '[]');
+  let studentResults = JSON.parse(localStorage.getItem('studentResults') || '[]');
+  const teacherPassword = "1234";
+
+  // ==== الوظائف المشتركة ====
+  function saveExams() { localStorage.setItem('exams', JSON.stringify(exams)); }
+  function saveResults() { localStorage.setItem('studentResults', JSON.stringify(studentResults)); }
+  
+  function renderExamOptions() {
+    const select = document.getElementById('select-exam');
+    select.innerHTML = exams.map((e,i)=>`<option value="${i}">${e.name}</option>`).join('');
+  }
+
+  function renderExamList() {
+    const listDiv = document.getElementById('exam-list');
+    listDiv.innerHTML = exams.map((e,i)=>`<div><strong>${e.name} (مدة: ${e.duration||0} دقيقة)</strong> <button data-index="${i}" class="edit-btn">تعديل</button></div>`).join('');
+    document.querySelectorAll('.edit-btn').forEach(btn => btn.onclick = ()=>alert('تعديل غير مفعل، استخدم إنشاء جديد'));
+    renderExamOptions();
+  }
+
+  // ==== لوحة المعلم ====
+  document.getElementById('btnTeacherLogin').onclick = () => {
+    const pass = prompt('ادخل كلمة سر المعلم');
+    if(pass===teacherPassword){
+      document.getElementById('teacher-panel').classList.remove('hidden');
+    } else alert('كلمة سر خاطئة');
+  }
+
+  document.getElementById('btnResetDB').onclick = () => {
+    if(confirm('مسح جميع البيانات؟')){
+      exams=[]; studentResults=[]; saveExams(); saveResults();
+      renderExamList(); document.getElementById('edit-exam').innerHTML='';
+    }
+  }
+
+  document.getElementById('btnShowResults').onclick = () => {
+    const editDiv = document.getElementById('edit-exam'); editDiv.innerHTML='';
+    if(studentResults.length===0){ editDiv.textContent='لا توجد نتائج بعد'; return; }
+    const html = studentResults.map((r,i)=>`<div>${i+1}. ${r.name} - ${r.exam} : ${r.score}/${r.total}</div>`).join('');
+    editDiv.innerHTML = `<h3>نتائج الطلاب</h3>${html}`;
+  }
+
+  document.getElementById('btnCreateExam').onclick = () => {
+    const editDiv = document.getElementById('edit-exam'); editDiv.innerHTML='';
+    const nameInput = document.createElement('input'); nameInput.placeholder='اسم الامتحان';
+    const durationInput = document.createElement('input'); durationInput.type='number'; durationInput.placeholder='مدة الامتحان بالدقائق';
+    const numQInput = document.createElement('input'); numQInput.type='number'; numQInput.placeholder='عدد الأسئلة';
+    const nextBtn = document.createElement('button'); nextBtn.textContent='التالي';
+    editDiv.append(nameInput,durationInput,numQInput,nextBtn);
+
+    nextBtn.onclick = () => {
+      const name = nameInput.value.trim();
+      const duration = parseInt(durationInput.value)||0;
+      const numQ = parseInt(numQInput.value);
+      if(!name||isNaN(numQ)||numQ<=0){ alert('أدخل اسم وعدد صحيح للأسئلة'); return; }
+      editDiv.innerHTML='<h3>إنشاء الامتحان</h3>';
+      const questions = [];
+      for(let i=0;i<numQ;i++){
+        const qDiv = document.createElement('div'); qDiv.className='question';
+        qDiv.innerHTML=`<strong>السؤال ${i+1}</strong><br>
+        <input type="text" placeholder="نص السؤال"><br>
+        ${[0,1,2,3].map(j=>`<input type="text" placeholder="خيار ${j+1}"><br>`).join('')}
+        <label>صحيح: <select>${[0,1,2,3].map(j=>`<option value="${j}">${j+1}</option>`).join('')}</select></label>`;
+        editDiv.appendChild(qDiv);
+        questions.push({text:'',options:['','','',''],correct:[true,false,false,false]});
+        const inputs=qDiv.querySelectorAll('input[type=text]');
+        inputs.forEach((input,j)=>{ input.onchange=()=>{ if(j===0) questions[i].text=input.value; else questions[i].options[j-1]=input.value; }; });
+        const sel=qDiv.querySelector('select'); sel.onchange=()=>{ questions[i].correct=[false,false,false,false]; questions[i].correct[sel.value]=true; };
+      }
+      const saveBtn = document.createElement('button'); saveBtn.textContent='حفظ الامتحان';
+      saveBtn.onclick = () => { exams.push({name,questions,duration}); saveExams(); renderExamList(); editDiv.innerHTML=''; };
+      editDiv.appendChild(saveBtn);
+    }
+  }
+
+  // ==== لوحة الطالب ====
+  document.getElementById('btnStartExam').onclick = () => {
+    const examIndex = parseInt(document.getElementById('select-exam').value);
+    const studentName = document.getElementById('student-name').value.trim();
+    if(!studentName) return alert('ادخل اسمك');
+    const exam = exams[examIndex];
+    const formDiv = document.getElementById('exam-form'); formDiv.innerHTML='';
+    const timerDiv = document.getElementById('timer'); timerDiv.textContent='';
+    let timeLeft = (exam.duration||0)*60;
+    exam.questions.forEach((q,i)=>{
+      const qDiv = document.createElement('div'); qDiv.className='question';
+      qDiv.innerHTML = `<strong>${i+1}. ${q.text}</strong><br>` + 
+        q.options.map((o,j)=>`<label><input type="radio" name="q${i}" value="${j}"> ${o}</label><br>`).join('');
+      formDiv.appendChild(qDiv);
+    });
+    const submitBtn = document.createElement('button'); submitBtn.textContent='عرض النتيجة';
+    formDiv.appendChild(submitBtn);
+
+    let timerInterval=null;
+    if(timeLeft>0){
+      timerDiv.textContent=`الوقت المتبقي: ${Math.floor(timeLeft/60)}:${("0"+(timeLeft%60)).slice(-2)}`;
+      timerInterval=setInterval(()=>{
+        timeLeft--; timerDiv.textContent=`الوقت المتبقي: ${Math.floor(timeLeft/60)}:${("0"+(timeLeft%60)).slice(-2)}`;
+        if(timeLeft<=0){ clearInterval(timerInterval); submitBtn.click(); }
+      },1000);
+    }
+
+    submitBtn.onclick = () => {
+      if(timerInterval) clearInterval(timerInterval);
+      let score = 0;
+      exam.questions.forEach((q,i)=>{
+        const sel = document.querySelector(`input[name=q${i}]:checked`);
+        if(sel && q.correct[sel.value]) score++;
+      });
+      formDiv.innerHTML=''; timerDiv.textContent='';
+      formDiv.innerHTML=`${studentName} حصل على ${score} من ${exam.questions.length}`;
+      studentResults.push({name:studentName,exam:exam.name,score,total:exam.questions.length});
+      saveResults();
+    }
+  }
+
+  renderExamList();
+  renderExamOptions();
+});
+</script>
+
+</body>
+</html>
